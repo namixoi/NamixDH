@@ -16,7 +16,7 @@ GET_SNAPSHOT = b'\x11\x00\x00\x00(\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x
                b'\x00\x00%b\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 JPEG_GARBAGE1 = b'\x0a%b\x00\x00\x0a\x00\x00\x00'
 JPEG_GARBAGE2 = b'\xbc\x00\x00\x00\x00\x80\x00\x00%b'
-TIMEOUT = 5
+TIMEOUT = 1
 
 request_text_name = {
     'url': 'http://{}:{}/cgi-bin/magicBox.cgi?action=getMachineName',
@@ -88,7 +88,7 @@ class DahuaController:
                                            (8 - len(login)) * b'\x00', password.encode('ascii'),
                                            (8 - len(password)) * b'\x00', login.encode('ascii'),
                                            password.encode('ascii'), str(int(time.time())).encode('ascii')))
-        
+
             data = self.socket.recv(128)
             if data[8] == 1:
                 if data[9] == 4:
@@ -107,7 +107,7 @@ class DahuaController:
         except Exception as e:
             #print(e, '__init__ ')
             pass
-        
+
 
 
     def get_seriall(self):
@@ -119,7 +119,7 @@ class DahuaController:
             #print(e, 'get_seriall ')
             pass
 
-    
+
     def get_channels_count(self):
       try:
         self.socket.send(GET_CHANNELS)
@@ -139,18 +139,18 @@ class DahuaController:
                 raise struct.error
             data = self.socket.recv(length)
             return data
-            
+
         except Exception as e:
           #print(e, 'receive_msg')
           pass
-    
+
 
 
     def get_snapshot(self, channel_id):
         try:
             channel_id = struct.pack('B', channel_id)
             self.socket.send(GET_SNAPSHOT % (channel_id, channel_id))
-            self.socket.settimeout(6)
+            self.socket.settimeout(3)
             data = self.receive_msg_2(channel_id)
             self.socket.settimeout(TIMEOUT)
         except Exception as e:
@@ -187,140 +187,3 @@ class DahuaController:
         except Exception as e:
             #print(e, 'receive_msg_2')
             pass
-
-    @staticmethod
-    def dahua_http_check(req, ip, port, auth):
-        url = req['url'].format(ip, port)
-        logging.debug(auth)
-        data = {}
-        try:
-            resp = requests.get(url,auth=auth,timeout=5)
-        except Exception as e:
-            logging.debug(e)
-            pass
-        else:
-            if resp.status_code == 401:
-                logging.debug(resp.headers)
-                logging.debug('Got auth code by {}'.format(url))
-                if not 'WWW-Authenticate' in resp.headers:
-                    return False
-                if 'Digest realm' in resp.headers['WWW-Authenticate']:
-                    return {'http_port': port, 'auth': 'digest'}
-                elif not 'Device_CGI' in resp.headers['WWW-Authenticate']:
-                    # предполагаем, что в Basic везде такой вход
-                    return False
-                else:
-                    return {'http_port': port, 'auth': 'basic'}
-            if resp.status_code in [400, 404, 500]:
-                logging.debug("{}: {}".format(port, resp.status_code))
-            if resp.status_code == 200:
-                logging.debug(resp.headers)
-                if 'CONTENT-TYPE' in resp.headers and resp.headers['CONTENT-TYPE'] == 'image/jpeg':
-                    data['snapshot'] = 'yes'
-                    logging.debug('HTTP SCREENSHOT AVAILABLE')
-                    return data
-                else:
-                    logging.debug("{}: {}".format(port, resp.text))
-                    if not 'fields' in req:
-                        return []
-                    strs = resp.text.split('\n')
-                    for key in req['fields']:
-                        value = req['fields'][key]
-                        found = False
-                        for str in strs:
-                            keyvalue = str.split('=')
-                            if key==keyvalue[0]:
-                                found = True
-                                data[value] = keyvalue[1].strip()
-                                logging.debug("{}: {}".format(req['fields'][key], keyvalue[1]))
-                                break
-                        if not found:
-                            data[value] = '-'
-                            logging.debug('{}: -'.format(req['fields'][key]))
-                return data
-        return False
-
-    @staticmethod
-    def get_extended_info(cam):
-        logging.debug(cam)
-        logging.debug('Try to get extended info  from cam {}'.format(cam['IP']))
-        auth = HTTPBasicAuth(cam['Login'], cam['Password'])
-        valid_port = None
-        data = cam
-
-        for port in HTTP_PORTS:
-            check = DahuaController.dahua_http_check({'url': 'http://{}:{}/cgi-bin/'}, cam['IP'], port, None)
-            if check and 'http_port' in check:
-                valid_port = port
-                data['http_port'] = port
-                if check['auth'] == 'digest':
-                    auth = HTTPDigestAuth(cam['Login'], cam['Password'])
-                break
-
-        if not valid_port:
-            return False
-
-        for req in HTTP_API_REQUESTS:
-            res = DahuaController.dahua_http_check(req, cam['IP'], port, auth)
-            if res and not 'http_port' in res:
-                data.update(res)
-
-        params = ""
-
-        strcam_type = ', unknown'
-        if not 'type' in data:
-            data['type'] = 'unknown'
-        elif data['type'].strip():
-            strcam_type = ', %s' % data['type']
-
-        if 'ptz' in data and data['ptz']:
-            if 'DH-SD3' in data['ptz']:
-                params += ", PTZ"
-
-        if 'iftype2' in data and data['iftype2']:
-            if 'Wireless' in data['iftype2']:
-                params += ", Wi-Fi"
-
-        type_array = {
-            'DH-HAC-HUM': 'Pinhole',
-            'DH-CA-UM': 'Pinhole',
-            'DH-HAC-HDBW': 'Mobile',
-            'DVR0404': 'ATM',
-            'DHI-ITL': 'Traffic',
-            'DH-MPTZ': 'Mobile PTZ',
-            'DH-PVR': 'PVR',
-            'UVSS': 'Vehicle',
-            'UAV': 'Drone',
-            'DH-M70': 'Multiservice Matrix',
-            'ITC': 'Parking System',
-            'DH-KVM0': 'KVM Switch',
-            'DH-PFS': 'Managed Switch',
-            'DH-KIT-HCVR': 'HD Surveillance System',
-            'DH-TPC': 'Thermal',
-            'DH-EVS': 'Video Storage',
-            'ARC': 'Alarm System',
-            'ARK': 'Access Control System',
-            'ASM': 'Access Control Module',
-            'VTH': 'Indoor',
-            'VTN': 'Door',
-            'VTO': 'Outdoor',
-            'DHI-NVR4104': 'Wi-Fi NVR',
-            'VTS': 'Home Operator',
-            'DH-EPS': 'PTZ System',
-            'DH-PTZ': 'PTZ System',
-            'DH-SD': 'PTZ System',
-            'DH-HAC': '1080p Storage/Camera',
-            'DH-NKB': 'Keyboard',
-            'DH-ESS': 'Storage',
-            'DH-NVR0404FD': 'Forensic-NVR'
-        }
-
-        for prefix, cam_type in type_array.items():
-            if prefix in data['type']:
-                params += ", " + cam_type
-
-        str = '%s:%s%s%s' % (cam['IP'], valid_port, strcam_type, params)
-        logging.info('Found HTTP API: %s' % str)
-        #if 'PTZ' in str or 'Wi-Fi' in str:
-        #    post_str("%s\n%s:%s" % (str, cam['Login'], cam['Password']))
-        return data
